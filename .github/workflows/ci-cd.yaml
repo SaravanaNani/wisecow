@@ -1,0 +1,64 @@
+name: Wisecow CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/wisecow:latest .
+
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
+
+  deploy-to-minikube:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.33.5'
+
+      - name: Set kubeconfig for Minikube
+        run: |
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 --decode > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f ingress.yaml
+
+      - name: Wait for deployment rollout
+        run: |
+          kubectl rollout status deployment/wisecow-deployment --timeout=120s
+
+      - name: Verify services and ingress
+        run: |
+          kubectl get pods
+          kubectl get svc
+          kubectl get ingress
+
+      - name: Test HTTPS endpoint (optional)
+        run: |
+          POD_IP=$(kubectl get pod -l app=wisecow -o jsonpath='{.items[0].status.podIP}')
+          echo "Pod IP: $POD_IP"
+          curl -k https://wisecow.example.com || echo "Check Ingress / LoadBalancer routing"

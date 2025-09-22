@@ -7,6 +7,7 @@ on:
 
 jobs:
   build-and-push:
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,39 +20,56 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/wisecow:latest .
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/wisecow:latest .
 
       - name: Push Docker image to Docker Hub
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
 
   deploy-to-ec2-minikube:
+    name: Deploy to EC2 Minikube
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
-      - name: Deploy to Minikube on EC2
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # Go to your project folder on EC2
-            cd ~/wisecow
+            echo "Starting deployment on EC2 Minikube..."
 
-            # Pull latest Docker image in Minikube
-            minikube image rm ${{ secrets.DOCKER_USERNAME }}/wisecow:latest || true
+            # Go to home directory and ensure repo exists
+            cd ~
+            if [ ! -d "wisecow" ]; then
+              git clone https://github.com/<your-username>/wisecow.git
+            fi
+            cd wisecow
+            git pull
+
+            # Ensure Minikube is running
+            minikube status || minikube start --driver=docker
+
+            # Configure Docker to use Minikube's Docker daemon
+            eval $(minikube docker-env)
+
+            # Pull and load the latest image into Minikube
+            docker pull ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
             minikube image load ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
 
-            # Update deployment with new image
-            kubectl set image deployment/wisecow-deployment wisecow=${{ secrets.DOCKER_USERNAME }}/wisecow:latest
-
-            # Apply manifests
+            # Apply Kubernetes manifests
             kubectl apply -f deployment.yaml
             kubectl apply -f service.yaml
             kubectl apply -f ingress.yaml
 
             # Ensure TLS secret exists
-            kubectl get secret wisecow-tls || kubectl create secret tls wisecow-tls --key=tls.key --cert=tls.crt
+            if ! kubectl get secret wisecow-tls >/dev/null 2>&1; then
+              kubectl create secret tls wisecow-tls --key=tls.key --cert=tls.crt
+            fi
 
-            # Optional: check pod status
+            # Check deployment rollout status
             kubectl rollout status deployment/wisecow-deployment
+
+            echo "Deployment completed successfully!"

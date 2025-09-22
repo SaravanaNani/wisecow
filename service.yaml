@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wisecow-service
+spec:
+  type: LoadBalancer          # Exposes service externally
+  selector:
+    app: wisecow
+  ports:
+    - port: 80               # External port for Ingress
+      targetPort: 4499       # Pod port
+      protocol: TCP

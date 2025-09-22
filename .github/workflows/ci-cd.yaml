@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -29,7 +29,7 @@ jobs:
     needs: build-and-push
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Copy Kubernetes manifests to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -37,7 +37,10 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "deployment.yaml,service.yaml,ingress.yaml"
+          source: |
+            deployment.yaml
+            service.yaml
+            ingress.yaml
           target: "~/wisecow/"
 
   deploy-to-ec2-minikube:
@@ -56,12 +59,16 @@ jobs:
 
             cd ~/wisecow
 
-            # Ensure Minikube is running
-            sudo minikube status || sudo minikube start --driver=docker
+            # Ensure Minikube is running with --driver=none
+            if ! minikube status >/dev/null 2>&1; then
+              sudo minikube start --driver=none
+            fi
+
+            # Make sure kubectl points to minikube context
+            kubectl config use-context minikube
 
             # Pull latest Docker image
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
-            sudo minikube image load ${{ secrets.DOCKER_USERNAME }}/wisecow:latest
 
             # Apply Kubernetes manifests
             kubectl apply -f deployment.yaml

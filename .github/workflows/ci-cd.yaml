@@ -50,7 +50,7 @@ jobs:
 
             echo ">>> Starting Minikube..."
             if ! sudo minikube status &>/dev/null; then
-              sudo minikube start --driver=none --force --kubernetes-version=v1.30.0
+              sudo minikube start --driver=docker --force --kubernetes-version=v1.30.0
               sudo chown -R $USER:$USER ~/.kube ~/.minikube
             fi
 
